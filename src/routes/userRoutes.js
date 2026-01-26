@@ -7,7 +7,7 @@ const {
     updateUser,
     deleteUser,
     changePassword
-} = require('../controllers/userCOntroller');
+} = require('../controllers/userController');
 const { auth, authorize } = require('../middlewares/auth');
 
 // Apply authentication to all routes
