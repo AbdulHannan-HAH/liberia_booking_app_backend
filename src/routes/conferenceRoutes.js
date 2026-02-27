@@ -1,3 +1,4 @@
+// routes/conferenceRoutes.js
 const express = require('express');
 const router = express.Router();
 const {
@@ -26,22 +27,42 @@ const { auth, authorize } = require('../middlewares/auth');
 // Apply authentication to all routes
 router.use(auth);
 
-// Routes accessible by both admin and conference_staff
+// ============================================
+// ROUTES ACCESSIBLE BY BOTH ADMIN AND CONFERENCE STAFF
+// ============================================
+
+// Bookings routes - YAHAN 'conference_staff' ALLOWED HONA CHAHIYE
 router.get('/bookings', authorize(['admin', 'conference_staff']), getBookings);
 router.get('/bookings/:id', authorize(['admin', 'conference_staff']), getBooking);
 router.post('/bookings', authorize(['admin', 'conference_staff']), createBooking);
 router.put('/bookings/:id', authorize(['admin', 'conference_staff']), updateBooking);
 router.put('/bookings/:id/status', authorize(['admin', 'conference_staff']), updateBookingStatus);
 router.put('/bookings/:id/payment', authorize(['admin', 'conference_staff']), updatePaymentStatus);
-router.get('/dashboard', authorize(['admin', 'conference_staff']), getDashboardStats);
-router.get('/reports', authorize(['admin', 'conference_staff']), getReports);
+
+// Halls routes (Settings ke liye)
 router.get('/halls', authorize(['admin', 'conference_staff']), getConferenceHalls);
+router.put('/halls/:id', authorize(['admin', 'conference_staff']), updateConferenceHall);
+
+// Equipment routes
 router.get('/equipment', authorize(['admin', 'conference_staff']), getEquipment);
 
-// Admin only routes
+// ============================================
+// ADMIN ONLY ROUTES (STAFF KO NAHI CHAHIYE)
+// ============================================
+
+// Dashboard (ADMIN ONLY)
+router.get('/dashboard', authorize(['admin']), getDashboardStats);
+
+// Reports (ADMIN ONLY)
+router.get('/reports', authorize(['admin']), getReports);
+
+// Delete booking (ADMIN ONLY)
 router.delete('/bookings/:id', authorize(['admin']), deleteBooking);
-router.put('/halls/:id', authorize(['admin']), updateConferenceHall);
+
+// Initialize halls (ADMIN ONLY - setup ke liye)
 router.post('/halls/initialize', authorize(['admin']), initializeConferenceHalls);
+
+// Equipment management (ADMIN ONLY)
 router.put('/equipment/:id', authorize(['admin']), updateEquipment);
 router.post('/equipment', authorize(['admin']), createEquipment);
 

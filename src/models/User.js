@@ -31,7 +31,7 @@ const userSchema = new mongoose.Schema(
         },
         role: {
             type: String,
-            enum: ['admin', 'pool_staff', 'conference_staff', 'hotel_staff'],
+            enum: ['admin', 'pool_staff', 'conference_staff', 'hotel_staff', 'restaurant_staff'],
             default: 'pool_staff'
         },
         isActive: {

@@ -5,13 +5,10 @@ const router = express.Router();
 const authRoutes = require('./authRoutes');
 const userRoutes = require('./userRoutes');
 const poolRoutes = require('./poolRoutes');
-const conferenceRoutes = require('./conferenceRoutes'); // Add this line
-
-// routes/index.js (update)
+const conferenceRoutes = require('./conferenceRoutes');
 const hotelRoutes = require('./hotelRoutes');
+const restaurantRoutes = require('./restaurantRoutes'); // Add this
 
-// Add to router.use
-router.use('/hotel', hotelRoutes);
 // Route: /api/auth
 router.use('/auth', authRoutes);
 
@@ -22,7 +19,13 @@ router.use('/users', userRoutes);
 router.use('/pool', poolRoutes);
 
 // Route: /api/conference
-router.use('/conference', conferenceRoutes); // Add this line
+router.use('/conference', conferenceRoutes);
+
+// Route: /api/hotel
+router.use('/hotel', hotelRoutes);
+
+// Route: /api/restaurant
+router.use('/restaurant', restaurantRoutes); // Add this
 
 // Test route
 router.get('/test', (req, res) => {
