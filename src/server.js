@@ -22,7 +22,8 @@ app.use(cors({
         'http://localhost:8080',
         'http://localhost:8081',
         'https://bookingapp-omega-liart.vercel.app',
-        'https://peaceempirehotel.vercel.app'
+        'https://peaceempirehotel.vercel.app',
+        'https://mellow-valkyrie-f086d9.netlify.app'
     ],
     credentials: true
 }));
