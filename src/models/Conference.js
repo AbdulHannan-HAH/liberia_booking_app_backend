@@ -17,14 +17,15 @@ const conferenceSchema = new mongoose.Schema({
     },
     email: {
         type: String,
-        required: [true, 'Email is required'],
+        required: false,  // false kar diya
         trim: true,
         lowercase: true,
-        match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email']
+        match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email'],
+        sparse: true // Unique nahi hai to iski zaroorat nahi, but agar unique hota to ye use karte
     },
     phone: {
         type: String,
-        required: [true, 'Phone number is required'],
+        required: false,  // false kar diya
         trim: true
     },
     hallType: {
@@ -122,12 +123,5 @@ const conferenceSchema = new mongoose.Schema({
 }, {
     timestamps: true
 });
-
-// TEMPORARY FIX - Remove pre-save hook entirely
-// Don't use any pre-save hook for now
-// conferenceSchema.pre('save', function(next) {
-//     // Empty for now
-//     next();
-// });
 
 module.exports = mongoose.model('Conference', conferenceSchema);

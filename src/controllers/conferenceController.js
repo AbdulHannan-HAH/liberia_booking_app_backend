@@ -155,9 +155,9 @@ exports.createBooking = async (req, res) => {
             notes
         } = req.body;
 
-        // 📋 Step 1: Validate required fields
+        // 📋 Step 1: Validate required fields (email aur phone hata diye)
         console.log('📋 STEP 1: Validating required fields...');
-        const requiredFields = ['eventName', 'clientName', 'email', 'phone', 'hallType',
+        const requiredFields = ['eventName', 'clientName', 'hallType',
             'startDate', 'endDate', 'startTime', 'endTime', 'eventType',
             'attendees', 'amount'];
 
@@ -268,7 +268,7 @@ exports.createBooking = async (req, res) => {
         }
         console.log('✅ No overlapping bookings found');
 
-        // 🔢 Step 6: Generate booking number (MOVED FROM PRE-SAVE HOOK)
+        // 🔢 Step 6: Generate booking number
         console.log('🔢 STEP 6: Generating booking number...');
         const bookingCount = await Conference.countDocuments();
         const bookingNumber = `CH-${Date.now().toString().slice(-6)}-${bookingCount + 1}`;
@@ -298,7 +298,7 @@ exports.createBooking = async (req, res) => {
         }
         console.log('Payment Status:', paymentStatus);
 
-        // 🔧 Step 7b: Generate invoice number if needed (MOVED FROM PRE-SAVE HOOK)
+        // 🔧 Step 7b: Generate invoice number if needed
         console.log('🔧 STEP 7b: Checking for invoice generation...');
         let invoiceNumber = '';
         if (req.body.bookingStatus === 'approved') {
@@ -314,8 +314,8 @@ exports.createBooking = async (req, res) => {
             eventName,
             clientName,
             company: company || '',
-            email,
-            phone,
+            email: email || '', // Empty string allowed
+            phone: phone || '', // Empty string allowed
             hallType,
             startDate: startDateTime,
             endDate: endDateTime,
