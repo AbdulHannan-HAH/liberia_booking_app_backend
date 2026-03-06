@@ -133,11 +133,11 @@ exports.createBooking = async (req, res) => {
             notes
         } = req.body;
 
-        // Validate required fields
-        if (!customerName || !email || !phone || !date || !timeSlot || !passType || !persons) {
+        // Validate required fields - only customerName is now required
+        if (!customerName || !date || !timeSlot || !passType || !persons) {
             return res.status(400).json({
                 success: false,
-                message: 'Please provide all required fields'
+                message: 'Please provide all required fields: customerName, date, timeSlot, passType, persons'
             });
         }
 
@@ -201,11 +201,11 @@ exports.createBooking = async (req, res) => {
         const bookingCount = await Pool.countDocuments();
         const bookingNumber = `PB-${Date.now().toString().slice(-6)}-${bookingCount + 1}`;
 
-        // Create booking
+        // Create booking - email and phone are now optional (will be saved as empty strings if not provided)
         const booking = await Pool.create({
             customerName,
-            email,
-            phone,
+            email: email || '', // Default to empty string if not provided
+            phone: phone || '', // Default to empty string if not provided
             date: selectedDate,
             timeSlot,
             passType,
@@ -281,10 +281,10 @@ exports.updateBooking = async (req, res) => {
         const oldPersons = booking.persons;
         const oldDate = booking.date;
 
-        // Update fields
+        // Update fields - email and phone can be updated to empty strings
         if (customerName) booking.customerName = customerName;
-        if (email) booking.email = email;
-        if (phone) booking.phone = phone;
+        if (email !== undefined) booking.email = email;
+        if (phone !== undefined) booking.phone = phone;
         if (date) booking.date = new Date(date);
         if (timeSlot) booking.timeSlot = timeSlot;
         if (passType) booking.passType = passType;

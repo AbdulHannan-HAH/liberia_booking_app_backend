@@ -8,15 +8,15 @@ const poolSchema = new mongoose.Schema({
     },
     email: {
         type: String,
-        required: [true, 'Email is required'],
         trim: true,
         lowercase: true,
-        match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email']
+        match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email'],
+        default: '' // Set default to empty string
     },
     phone: {
         type: String,
-        required: [true, 'Phone number is required'],
-        trim: true
+        trim: true,
+        default: '' // Set default to empty string
     },
     date: {
         type: Date,

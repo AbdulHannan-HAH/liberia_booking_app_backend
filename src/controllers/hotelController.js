@@ -1,4 +1,4 @@
-// controllers/hotelController.js - UPDATED (NO TAX + REAL-TIME REPORTS)
+// controllers/hotelController.js - UPDATED (NO TAX + OPTIONAL EMAIL/PHONE)
 const Reservation = require('../models/Reservation');
 const Room = require('../models/Room');
 const RoomType = require('../models/RoomType');
@@ -105,7 +105,7 @@ exports.getReservation = async (req, res) => {
     }
 };
 
-// @desc    Create new reservation (NO TAX)
+// @desc    Create new reservation (NO TAX + OPTIONAL EMAIL/PHONE)
 // @route   POST /api/hotel/reservations
 // @access  Private/Admin, Hotel Staff
 exports.createReservation = async (req, res) => {
@@ -129,11 +129,11 @@ exports.createReservation = async (req, res) => {
             extraCharges = []
         } = req.body;
 
-        // Validate required fields
-        if (!guestName || !phone || !checkIn || !checkOut || !roomType || !roomNumber || !adults) {
+        // Validate required fields - only guestName is required, email and phone are optional
+        if (!guestName || !checkIn || !checkOut || !roomType || !roomNumber || !adults) {
             return res.status(400).json({
                 success: false,
-                message: 'Please provide all required fields'
+                message: 'Please provide all required fields: guestName, checkIn, checkOut, roomType, roomNumber, adults'
             });
         }
 
@@ -205,11 +205,11 @@ exports.createReservation = async (req, res) => {
         const reservationCount = await Reservation.countDocuments();
         const reservationNumber = `HR-${Date.now().toString().slice(-6)}-${reservationCount + 1}`;
 
-        // Create reservation
+        // Create reservation - email and phone are optional (will be saved as empty strings if not provided)
         const reservation = await Reservation.create({
             guestName,
-            email: email || '',
-            phone,
+            email: email || '', // Default to empty string if not provided
+            phone: phone || '', // Default to empty string if not provided
             checkIn: checkInDate,
             checkOut: checkOutDate,
             roomType,
@@ -298,10 +298,10 @@ exports.updateReservation = async (req, res) => {
         const oldCheckIn = reservation.checkIn;
         const oldCheckOut = reservation.checkOut;
 
-        // Update fields
+        // Update fields - email and phone can be updated to empty strings
         if (guestName) reservation.guestName = guestName;
-        if (email) reservation.email = email;
-        if (phone) reservation.phone = phone;
+        if (email !== undefined) reservation.email = email;
+        if (phone !== undefined) reservation.phone = phone;
         if (checkIn) reservation.checkIn = new Date(checkIn);
         if (checkOut) reservation.checkOut = new Date(checkOut);
         if (roomNumber) reservation.roomNumber = roomNumber;
