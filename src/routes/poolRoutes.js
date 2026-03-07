@@ -8,7 +8,8 @@ const {
     deleteBooking,
     updatePaymentStatus,
     getDashboardStats,
-    getReports
+    getReports,
+    debugBookings
 } = require('../controllers/poolController');
 const {
     getTicketPrices,
@@ -24,6 +25,9 @@ const { auth, authorize } = require('../middlewares/auth');
 
 // Apply authentication to all routes
 router.use(auth);
+
+// Debug route - remove after fixing
+router.get('/debug/bookings', authorize(['admin']), debugBookings);
 
 // Routes accessible by both admin and pool_staff
 router.get('/bookings', authorize(['admin', 'pool_staff']), getBookings);

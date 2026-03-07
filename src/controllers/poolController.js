@@ -59,13 +59,14 @@ exports.getBookings = async (req, res) => {
 
         const total = await Pool.countDocuments(query);
 
+        console.log(`📊 Found ${bookings.length} bookings (Page ${page})`);
+
         res.status(200).json({
             success: true,
-            count: bookings.length,
-            total,
+            bookings: bookings,
+            total: total,
             totalPages: Math.ceil(total / parseInt(limit)),
-            currentPage: parseInt(page),
-            bookings
+            currentPage: parseInt(page)
         });
 
     } catch (error) {
@@ -95,7 +96,7 @@ exports.getBooking = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            booking
+            booking: booking
         });
 
     } catch (error) {
@@ -133,7 +134,7 @@ exports.createBooking = async (req, res) => {
             notes
         } = req.body;
 
-        // Validate required fields - only customerName is now required
+        // Validate required fields
         if (!customerName || !date || !timeSlot || !passType || !persons) {
             return res.status(400).json({
                 success: false,
@@ -201,11 +202,11 @@ exports.createBooking = async (req, res) => {
         const bookingCount = await Pool.countDocuments();
         const bookingNumber = `PB-${Date.now().toString().slice(-6)}-${bookingCount + 1}`;
 
-        // Create booking - email and phone are now optional (will be saved as empty strings if not provided)
+        // Create booking
         const booking = await Pool.create({
             customerName,
-            email: email || '', // Default to empty string if not provided
-            phone: phone || '', // Default to empty string if not provided
+            email: email || '',
+            phone: phone || '',
             date: selectedDate,
             timeSlot,
             passType,
@@ -281,7 +282,7 @@ exports.updateBooking = async (req, res) => {
         const oldPersons = booking.persons;
         const oldDate = booking.date;
 
-        // Update fields - email and phone can be updated to empty strings
+        // Update fields
         if (customerName) booking.customerName = customerName;
         if (email !== undefined) booking.email = email;
         if (phone !== undefined) booking.phone = phone;
@@ -651,7 +652,7 @@ exports.getReports = async (req, res) => {
         const { startDate, endDate, groupBy = 'day' } = req.query;
 
         const start = startDate ? new Date(startDate) : new Date();
-        start.setDate(start.getDate() - 30); // Default to last 30 days
+        start.setDate(start.getDate() - 30);
         start.setHours(0, 0, 0, 0);
 
         const end = endDate ? new Date(endDate) : new Date();
@@ -795,6 +796,28 @@ exports.getReports = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Server error'
+        });
+    }
+};
+
+// @desc    Debug - Get all bookings raw
+// @route   GET /api/pool/debug/bookings
+// @access  Private/Admin
+exports.debugBookings = async (req, res) => {
+    try {
+        const bookings = await Pool.find({}).lean();
+        console.log('📊 Debug - Total bookings in DB:', bookings.length);
+
+        res.status(200).json({
+            success: true,
+            count: bookings.length,
+            bookings: bookings
+        });
+    } catch (error) {
+        console.error('Debug error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
         });
     }
 };
