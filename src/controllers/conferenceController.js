@@ -69,13 +69,20 @@ exports.getBookings = async (req, res) => {
 
         const total = await Conference.countDocuments(query);
 
+        // Add netAmount and balanceDue to each booking
+        const bookingsWithCalculations = bookings.map(booking => ({
+            ...booking,
+            netAmount: (booking.amount || 0) - (booking.discount || 0),
+            balanceDue: ((booking.amount || 0) - (booking.discount || 0)) - (booking.advancePaid || 0)
+        }));
+
         res.status(200).json({
             success: true,
             count: bookings.length,
             total,
             totalPages: Math.ceil(total / parseInt(limit)),
             currentPage: parseInt(page),
-            bookings
+            bookings: bookingsWithCalculations
         });
 
     } catch (error) {
@@ -104,9 +111,16 @@ exports.getBooking = async (req, res) => {
             });
         }
 
+        // Add calculated fields
+        const bookingWithCalculations = {
+            ...booking,
+            netAmount: (booking.amount || 0) - (booking.discount || 0),
+            balanceDue: ((booking.amount || 0) - (booking.discount || 0)) - (booking.advancePaid || 0)
+        };
+
         res.status(200).json({
             success: true,
-            booking
+            booking: bookingWithCalculations
         });
 
     } catch (error) {
@@ -151,11 +165,12 @@ exports.createBooking = async (req, res) => {
             equipmentRequired,
             specialRequirements,
             amount,
+            discount = 0,  // Add discount with default 0
             advancePaid,
             notes
         } = req.body;
 
-        // 📋 Step 1: Validate required fields (email aur phone hata diye)
+        // 📋 Step 1: Validate required fields
         console.log('📋 STEP 1: Validating required fields...');
         const requiredFields = ['eventName', 'clientName', 'hallType',
             'startDate', 'endDate', 'startTime', 'endTime', 'eventType',
@@ -277,9 +292,13 @@ exports.createBooking = async (req, res) => {
         // 💰 Step 7: Parse and validate payment details
         console.log('💰 STEP 7: Processing payment details...');
         const amountNum = parseFloat(amount);
+        const discountNum = parseFloat(discount) || 0;
+        const discountedAmountNum = amountNum - discountNum;
         const advancePaidNum = parseFloat(advancePaid) || 0;
 
         console.log('Amount:', amountNum);
+        console.log('Discount:', discountNum);
+        console.log('Discounted Amount:', discountedAmountNum);
         console.log('Advance Paid:', advancePaidNum);
 
         if (isNaN(amountNum) || amountNum <= 0) {
@@ -290,8 +309,24 @@ exports.createBooking = async (req, res) => {
             });
         }
 
+        if (discountNum < 0) {
+            console.log('❌ Invalid discount');
+            return res.status(400).json({
+                success: false,
+                message: 'Discount cannot be negative'
+            });
+        }
+
+        if (discountNum > amountNum) {
+            console.log('❌ Discount exceeds amount');
+            return res.status(400).json({
+                success: false,
+                message: 'Discount cannot exceed total amount'
+            });
+        }
+
         let paymentStatus = 'pending';
-        if (advancePaidNum >= amountNum) {
+        if (advancePaidNum >= discountedAmountNum) {
             paymentStatus = 'paid';
         } else if (advancePaidNum > 0) {
             paymentStatus = 'partial';
@@ -314,8 +349,8 @@ exports.createBooking = async (req, res) => {
             eventName,
             clientName,
             company: company || '',
-            email: email || '', // Empty string allowed
-            phone: phone || '', // Empty string allowed
+            email: email || '',
+            phone: phone || '',
             hallType,
             startDate: startDateTime,
             endDate: endDateTime,
@@ -327,9 +362,11 @@ exports.createBooking = async (req, res) => {
             equipmentRequired: equipmentRequired || false,
             specialRequirements: specialRequirements || '',
             amount: amountNum,
+            discount: discountNum,
+            discountedAmount: discountedAmountNum,
             advancePaid: advancePaidNum,
             paymentStatus,
-            bookingStatus: 'pending', // Default to pending
+            bookingStatus: 'pending',
             bookingNumber,
             notes: notes || '',
             createdBy: req.user._id
@@ -360,12 +397,19 @@ exports.createBooking = async (req, res) => {
             .populate('approvedBy', 'name')
             .lean();
 
+        // Add calculated fields
+        const bookingWithCalculations = {
+            ...populatedBooking,
+            netAmount: (populatedBooking.amount || 0) - (populatedBooking.discount || 0),
+            balanceDue: ((populatedBooking.amount || 0) - (populatedBooking.discount || 0)) - (populatedBooking.advancePaid || 0)
+        };
+
         console.log('🎉 ========== CREATE BOOKING SUCCESS ==========');
 
         res.status(201).json({
             success: true,
             message: 'Booking created successfully',
-            booking: populatedBooking
+            booking: bookingWithCalculations
         });
 
     } catch (error) {
@@ -438,14 +482,14 @@ exports.updateBooking = async (req, res) => {
             'eventName', 'clientName', 'company', 'email', 'phone',
             'hallType', 'startDate', 'endDate', 'startTime', 'endTime',
             'eventType', 'attendees', 'cateringRequired', 'equipmentRequired',
-            'specialRequirements', 'amount', 'advancePaid', 'notes'
+            'specialRequirements', 'amount', 'discount', 'advancePaid', 'notes'
         ];
 
         updatableFields.forEach(field => {
             if (req.body[field] !== undefined) {
                 if (field === 'startDate' || field === 'endDate') {
                     booking[field] = new Date(req.body[field]);
-                } else if (field === 'attendees' || field === 'amount' || field === 'advancePaid') {
+                } else if (field === 'attendees' || field === 'amount' || field === 'discount' || field === 'advancePaid') {
                     booking[field] = parseFloat(req.body[field]);
                 } else if (field === 'cateringRequired' || field === 'equipmentRequired') {
                     booking[field] = Boolean(req.body[field]);
@@ -455,15 +499,25 @@ exports.updateBooking = async (req, res) => {
             }
         });
 
-        // Update payment status based on advance paid
-        if (req.body.advancePaid !== undefined) {
-            if (booking.advancePaid >= booking.amount) {
-                booking.paymentStatus = 'paid';
-            } else if (booking.advancePaid > 0) {
-                booking.paymentStatus = 'partial';
-            } else {
-                booking.paymentStatus = 'pending';
-            }
+        // Validate discount doesn't exceed amount
+        if (booking.discount > booking.amount) {
+            return res.status(400).json({
+                success: false,
+                message: 'Discount cannot exceed total amount'
+            });
+        }
+
+        // Update discounted amount
+        booking.discountedAmount = booking.amount - booking.discount;
+
+        // Update payment status based on advance paid (using discounted amount)
+        const netAmount = booking.amount - booking.discount;
+        if (booking.advancePaid >= netAmount) {
+            booking.paymentStatus = 'paid';
+        } else if (booking.advancePaid > 0) {
+            booking.paymentStatus = 'partial';
+        } else {
+            booking.paymentStatus = 'pending';
         }
 
         // Generate invoice number if booking is being approved
@@ -483,10 +537,17 @@ exports.updateBooking = async (req, res) => {
             .populate('approvedBy', 'name')
             .lean();
 
+        // Add calculated fields
+        const bookingWithCalculations = {
+            ...updatedBooking,
+            netAmount: (updatedBooking.amount || 0) - (updatedBooking.discount || 0),
+            balanceDue: ((updatedBooking.amount || 0) - (updatedBooking.discount || 0)) - (updatedBooking.advancePaid || 0)
+        };
+
         res.status(200).json({
             success: true,
             message: 'Booking updated successfully',
-            booking: updatedBooking
+            booking: bookingWithCalculations
         });
 
     } catch (error) {
@@ -565,10 +626,17 @@ exports.updateBookingStatus = async (req, res) => {
             .populate('approvedBy', 'name')
             .lean();
 
+        // Add calculated fields
+        const bookingWithCalculations = {
+            ...updatedBooking,
+            netAmount: (updatedBooking.amount || 0) - (updatedBooking.discount || 0),
+            balanceDue: ((updatedBooking.amount || 0) - (updatedBooking.discount || 0)) - (updatedBooking.advancePaid || 0)
+        };
+
         res.status(200).json({
             success: true,
             message: 'Booking status updated successfully',
-            booking: updatedBooking
+            booking: bookingWithCalculations
         });
 
     } catch (error) {
@@ -620,10 +688,17 @@ exports.updatePaymentStatus = async (req, res) => {
             .populate('approvedBy', 'name')
             .lean();
 
+        // Add calculated fields
+        const bookingWithCalculations = {
+            ...updatedBooking,
+            netAmount: (updatedBooking.amount || 0) - (updatedBooking.discount || 0),
+            balanceDue: ((updatedBooking.amount || 0) - (updatedBooking.discount || 0)) - (updatedBooking.advancePaid || 0)
+        };
+
         res.status(200).json({
             success: true,
             message: 'Payment status updated successfully',
-            booking: updatedBooking
+            booking: bookingWithCalculations
         });
 
     } catch (error) {
@@ -722,13 +797,17 @@ exports.getDashboardStats = async (req, res) => {
                 $group: {
                     _id: null,
                     revenue: { $sum: '$advancePaid' },
-                    totalAmount: { $sum: '$amount' }
+                    totalAmount: { $sum: '$amount' },
+                    totalDiscount: { $sum: '$discount' },
+                    netAmount: { $sum: { $subtract: ['$amount', '$discount'] } }
                 }
             }
         ]);
 
         const monthlyRevenue = monthlyRevenueResult.length > 0 ? monthlyRevenueResult[0].revenue : 0;
         const monthlyTotalAmount = monthlyRevenueResult.length > 0 ? monthlyRevenueResult[0].totalAmount : 0;
+        const monthlyTotalDiscount = monthlyRevenueResult.length > 0 ? monthlyRevenueResult[0].totalDiscount : 0;
+        const monthlyNetAmount = monthlyRevenueResult.length > 0 ? monthlyRevenueResult[0].netAmount : 0;
 
         // Hall utilization
         const halls = await ConferenceHall.find({ isActive: true });
@@ -767,6 +846,12 @@ exports.getDashboardStats = async (req, res) => {
             .populate('createdBy', 'name')
             .lean();
 
+        // Add net amount to upcoming events
+        const upcomingEventsWithNet = upcomingEvents.map(event => ({
+            ...event,
+            netAmount: (event.amount || 0) - (event.discount || 0)
+        }));
+
         // Event type distribution
         const eventTypeDistribution = await Conference.aggregate([
             {
@@ -779,7 +864,10 @@ exports.getDashboardStats = async (req, res) => {
                 $group: {
                     _id: '$eventType',
                     count: { $sum: 1 },
-                    revenue: { $sum: '$advancePaid' }
+                    revenue: { $sum: '$advancePaid' },
+                    totalAmount: { $sum: '$amount' },
+                    totalDiscount: { $sum: '$discount' },
+                    netAmount: { $sum: { $subtract: ['$amount', '$discount'] } }
                 }
             },
             { $sort: { count: -1 } }
@@ -792,8 +880,10 @@ exports.getDashboardStats = async (req, res) => {
                 pendingApprovals,
                 monthlyRevenue,
                 monthlyTotalAmount,
+                monthlyTotalDiscount,
+                monthlyNetAmount,
                 hallUtilization,
-                upcomingEvents,
+                upcomingEvents: upcomingEventsWithNet,
                 eventTypeDistribution
             }
         });
@@ -849,7 +939,7 @@ exports.getReports = async (req, res) => {
                 sortFormat = { _id: 1 };
         }
 
-        // Revenue and bookings by time period
+        // Revenue and bookings by time period (with discount)
         const revenueData = await Conference.aggregate([
             { $match: matchQuery },
             {
@@ -857,6 +947,8 @@ exports.getReports = async (req, res) => {
                     _id: groupFormat,
                     revenue: { $sum: '$advancePaid' },
                     totalAmount: { $sum: '$amount' },
+                    totalDiscount: { $sum: '$discount' },
+                    netAmount: { $sum: { $subtract: ['$amount', '$discount'] } },
                     bookings: { $sum: 1 },
                     attendees: { $sum: '$attendees' }
                 }
@@ -872,8 +964,10 @@ exports.getReports = async (req, res) => {
                     _id: '$hallType',
                     bookings: { $sum: 1 },
                     revenue: { $sum: '$advancePaid' },
-                    attendees: { $sum: '$attendees' },
-                    utilization: { $avg: { $divide: ['$attendees', 100] } } // Assuming max capacity 100 for calculation
+                    totalAmount: { $sum: '$amount' },
+                    totalDiscount: { $sum: '$discount' },
+                    netAmount: { $sum: { $subtract: ['$amount', '$discount'] } },
+                    attendees: { $sum: '$attendees' }
                 }
             },
             { $sort: { bookings: -1 } }
@@ -887,8 +981,11 @@ exports.getReports = async (req, res) => {
                     _id: '$eventType',
                     count: { $sum: 1 },
                     revenue: { $sum: '$advancePaid' },
+                    totalAmount: { $sum: '$amount' },
+                    totalDiscount: { $sum: '$discount' },
+                    netAmount: { $sum: { $subtract: ['$amount', '$discount'] } },
                     avgAttendees: { $avg: '$attendees' },
-                    avgDuration: { $avg: { $subtract: ['$endDate', '$startDate'] } }
+                    avgDiscount: { $avg: '$discount' }
                 }
             },
             { $sort: { count: -1 } }
@@ -902,6 +999,8 @@ exports.getReports = async (req, res) => {
                     _id: '$clientName',
                     bookings: { $sum: 1 },
                     totalSpent: { $sum: '$advancePaid' },
+                    totalAmount: { $sum: '$amount' },
+                    totalDiscount: { $sum: '$discount' },
                     lastBooking: { $max: '$startDate' }
                 }
             },
@@ -925,6 +1024,9 @@ exports.getReports = async (req, res) => {
                 $group: {
                     _id: { $dateToString: { format: '%Y-%m-%d', date: '$startDate' } },
                     revenue: { $sum: '$advancePaid' },
+                    totalAmount: { $sum: '$amount' },
+                    totalDiscount: { $sum: '$discount' },
+                    netAmount: { $sum: { $subtract: ['$amount', '$discount'] } },
                     bookings: { $sum: 1 }
                 }
             },
@@ -943,6 +1045,13 @@ exports.getReports = async (req, res) => {
                 start: start.toISOString(),
                 end: end.toISOString(),
                 groupBy
+            },
+            summary: {
+                totalBookings: revenueData.reduce((sum, d) => sum + d.bookings, 0),
+                totalRevenue: revenueData.reduce((sum, d) => sum + d.revenue, 0),
+                totalAmount: revenueData.reduce((sum, d) => sum + d.totalAmount, 0),
+                totalDiscount: revenueData.reduce((sum, d) => sum + d.totalDiscount, 0),
+                totalNetAmount: revenueData.reduce((sum, d) => sum + d.netAmount, 0)
             }
         });
 

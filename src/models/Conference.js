@@ -17,16 +17,17 @@ const conferenceSchema = new mongoose.Schema({
     },
     email: {
         type: String,
-        required: false,  // false kar diya
+        required: false,
         trim: true,
         lowercase: true,
         match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email'],
-        sparse: true // Unique nahi hai to iski zaroorat nahi, but agar unique hota to ye use karte
+        default: '' // Set default to empty string
     },
     phone: {
         type: String,
-        required: false,  // false kar diya
-        trim: true
+        required: false,
+        trim: true,
+        default: '' // Set default to empty string
     },
     hallType: {
         type: String,
@@ -70,11 +71,21 @@ const conferenceSchema = new mongoose.Schema({
     },
     specialRequirements: {
         type: String,
-        trim: true
+        trim: true,
+        default: ''
     },
     amount: {
         type: Number,
         required: [true, 'Amount is required']
+    },
+    discount: {
+        type: Number,
+        default: 0,
+        min: [0, 'Discount cannot be negative']
+    },
+    discountedAmount: {
+        type: Number,
+        default: 0
     },
     advancePaid: {
         type: Number,
@@ -96,7 +107,8 @@ const conferenceSchema = new mongoose.Schema({
     },
     notes: {
         type: String,
-        trim: true
+        trim: true,
+        default: ''
     },
     createdBy: {
         type: mongoose.Schema.Types.ObjectId,
@@ -111,17 +123,37 @@ const conferenceSchema = new mongoose.Schema({
     },
     invoiceNumber: {
         type: String
-    },
-    createdAt: {
-        type: Date,
-        default: Date.now
-    },
-    updatedAt: {
-        type: Date,
-        default: Date.now
     }
 }, {
     timestamps: true
 });
+
+// Generate booking number before saving (Pool model ki tarah)
+conferenceSchema.pre('save', async function () {
+    // Generate booking number if not exists
+    if (!this.bookingNumber) {
+        const count = await this.constructor.countDocuments();
+        this.bookingNumber = `CH-${Date.now().toString().slice(-6)}-${count + 1}`;
+    }
+
+    // Calculate discounted amount
+    if (this.amount !== undefined && this.discount !== undefined) {
+        this.discountedAmount = (this.amount || 0) - (this.discount || 0);
+    }
+});
+
+// Virtual fields (optional - agar chahiye to)
+conferenceSchema.virtual('netAmount').get(function () {
+    return (this.amount || 0) - (this.discount || 0);
+});
+
+conferenceSchema.virtual('balanceDue').get(function () {
+    const netAmount = (this.amount || 0) - (this.discount || 0);
+    return netAmount - (this.advancePaid || 0);
+});
+
+// Ensure virtuals are included when converting to JSON
+conferenceSchema.set('toJSON', { virtuals: true });
+conferenceSchema.set('toObject', { virtuals: true });
 
 module.exports = mongoose.model('Conference', conferenceSchema);
