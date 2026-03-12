@@ -6,7 +6,6 @@ const User = require('../models/User');
 exports.getAllUsers = async (req, res) => {
     try {
         const users = await User.find().sort({ createdAt: -1 });
-
         res.status(200).json({
             success: true,
             count: users.length,
@@ -27,14 +26,12 @@ exports.getAllUsers = async (req, res) => {
 exports.getUser = async (req, res) => {
     try {
         const user = await User.findById(req.params.id);
-
         if (!user) {
             return res.status(404).json({
                 success: false,
                 message: 'User not found'
             });
         }
-
         res.status(200).json({
             success: true,
             user
@@ -103,29 +100,26 @@ exports.createUser = async (req, res) => {
     }
 };
 
-// @desc    Update user
+// @desc    Update user (including username and password)
 // @route   PUT /api/users/:id
 // @access  Private/Admin
 exports.updateUser = async (req, res) => {
     try {
-        const { name, email, role, isActive } = req.body;
+        const { name, username, email, role, isActive, password } = req.body;
         const userId = req.params.id;
 
-        // Don't allow updating password through this route
-        if (req.body.password) {
-            return res.status(400).json({
+        // Find user
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
                 success: false,
-                message: 'Use change password route to update password'
+                message: 'User not found'
             });
         }
 
-        // Check if email already exists for another user
-        if (email) {
-            const existingUser = await User.findOne({
-                email,
-                _id: { $ne: userId }
-            });
-
+        // Check email uniqueness if provided
+        if (email && email !== user.email) {
+            const existingUser = await User.findOne({ email, _id: { $ne: userId } });
             if (existingUser) {
                 return res.status(400).json({
                     success: false,
@@ -134,28 +128,42 @@ exports.updateUser = async (req, res) => {
             }
         }
 
-        // Find and update user
-        const user = await User.findById(userId);
-
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found'
-            });
+        // Check username uniqueness if provided
+        if (username && username !== user.username) {
+            const existingUser = await User.findOne({ username, _id: { $ne: userId } });
+            if (existingUser) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Username already exists'
+                });
+            }
         }
 
         // Update fields
         if (name) user.name = name;
+        if (username) user.username = username;
         if (email) user.email = email;
         if (role) user.role = role;
         if (isActive !== undefined) user.isActive = isActive;
+        if (password) {
+            if (password.length < 6) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Password must be at least 6 characters'
+                });
+            }
+            user.password = password; // Will be hashed in pre-save hook
+        }
 
         await user.save();
+
+        // Return updated user without password
+        const updatedUser = await User.findById(userId).select('-password');
 
         res.status(200).json({
             success: true,
             message: 'User updated successfully',
-            user
+            user: updatedUser
         });
     } catch (error) {
         console.error('Update user error:', error);
@@ -178,14 +186,12 @@ exports.updateUser = async (req, res) => {
         });
     }
 };
-
 // @desc    Delete user
 // @route   DELETE /api/users/:id
 // @access  Private/Admin
 exports.deleteUser = async (req, res) => {
     try {
         const user = await User.findById(req.params.id);
-
         if (!user) {
             return res.status(404).json({
                 success: false,
@@ -222,7 +228,7 @@ exports.deleteUser = async (req, res) => {
     }
 };
 
-// @desc    Change user password
+// @desc    Change user password (separate route, kept for compatibility)
 // @route   PUT /api/users/:id/change-password
 // @access  Private/Admin
 exports.changePassword = async (req, res) => {
@@ -238,7 +244,6 @@ exports.changePassword = async (req, res) => {
         }
 
         const user = await User.findById(userId).select('+password');
-
         if (!user) {
             return res.status(404).json({
                 success: false,
@@ -246,7 +251,6 @@ exports.changePassword = async (req, res) => {
             });
         }
 
-        // Update password
         user.password = newPassword;
         await user.save();
 
