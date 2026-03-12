@@ -130,6 +130,7 @@ exports.createBooking = async (req, res) => {
             timeSlot,
             passType,
             persons,
+            discount = 0,
             paymentStatus,
             notes
         } = req.body;
@@ -190,13 +191,24 @@ exports.createBooking = async (req, res) => {
             });
         }
 
-        // Calculate amount
-        let amount;
-        if (passType === 'family') {
-            amount = ticket.price;
-        } else {
-            amount = ticket.price * parseInt(persons);
+        // Validate discount
+        if (discount < 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Discount cannot be negative'
+            });
         }
+
+        // Calculate subtotal
+        let subtotal;
+        if (passType === 'family') {
+            subtotal = ticket.price;
+        } else {
+            subtotal = ticket.price * parseInt(persons);
+        }
+
+        // Calculate final amount after discount
+        const amount = Math.max(0, subtotal - parseFloat(discount));
 
         // Generate booking number
         const bookingCount = await Pool.countDocuments();
@@ -211,6 +223,8 @@ exports.createBooking = async (req, res) => {
             timeSlot,
             passType,
             persons: parseInt(persons),
+            subtotal,
+            discount: parseFloat(discount),
             amount,
             paymentStatus: paymentStatus || 'pending',
             notes: notes || '',
@@ -223,6 +237,7 @@ exports.createBooking = async (req, res) => {
         await slot.save();
 
         console.log('✅ Booking created:', booking.bookingNumber);
+        console.log('💰 Subtotal:', subtotal, 'Discount:', discount, 'Final Amount:', amount);
 
         // Populate createdBy info
         const populatedBooking = await Pool.findById(booking._id)
@@ -264,6 +279,7 @@ exports.updateBooking = async (req, res) => {
             timeSlot,
             passType,
             persons,
+            discount,
             paymentStatus,
             notes
         } = req.body;
@@ -341,18 +357,36 @@ exports.updateBooking = async (req, res) => {
             await newSlot.save();
         }
 
-        // Recalculate amount if passType or persons changed
-        if (passType || persons) {
+        // Recalculate amount if passType, persons, or discount changed
+        if (passType || persons || discount !== undefined) {
             const ticket = await TicketPrice.findOne({
                 passType: booking.passType,
                 isActive: true
             });
+
             if (ticket) {
+                // Calculate new subtotal
+                let subtotal;
                 if (booking.passType === 'family') {
-                    booking.amount = ticket.price;
+                    subtotal = ticket.price;
                 } else {
-                    booking.amount = ticket.price * booking.persons;
+                    subtotal = ticket.price * booking.persons;
                 }
+                booking.subtotal = subtotal;
+
+                // Update discount if provided
+                if (discount !== undefined) {
+                    if (discount < 0) {
+                        return res.status(400).json({
+                            success: false,
+                            message: 'Discount cannot be negative'
+                        });
+                    }
+                    booking.discount = parseFloat(discount);
+                }
+
+                // Calculate final amount
+                booking.amount = Math.max(0, booking.subtotal - booking.discount);
             }
         }
 
@@ -540,7 +574,7 @@ exports.getDashboardStats = async (req, res) => {
             paymentStatus: { $ne: 'cancelled' }
         });
 
-        // Total revenue today
+        // Total revenue today (using amount field which includes discounts)
         const todayRevenueResult = await Pool.aggregate([
             {
                 $match: {
@@ -557,6 +591,24 @@ exports.getDashboardStats = async (req, res) => {
         ]);
 
         const todayRevenue = todayRevenueResult.length > 0 ? todayRevenueResult[0].total : 0;
+
+        // Total discounts given today
+        const todayDiscountsResult = await Pool.aggregate([
+            {
+                $match: {
+                    date: { $gte: today, $lt: tomorrow },
+                    paymentStatus: 'paid'
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalDiscount: { $sum: '$discount' }
+                }
+            }
+        ]);
+
+        const todayDiscounts = todayDiscountsResult.length > 0 ? todayDiscountsResult[0].totalDiscount : 0;
 
         // Pending payments count
         const pendingPayments = await Pool.countDocuments({
@@ -615,7 +667,8 @@ exports.getDashboardStats = async (req, res) => {
                     _id: '$timeSlot',
                     bookings: { $sum: 1 },
                     persons: { $sum: '$persons' },
-                    revenue: { $sum: '$amount' }
+                    revenue: { $sum: '$amount' },
+                    discounts: { $sum: '$discount' }
                 }
             },
             { $sort: { _id: 1 } }
@@ -626,6 +679,7 @@ exports.getDashboardStats = async (req, res) => {
             stats: {
                 todayBookings,
                 todayRevenue,
+                todayDiscounts,
                 pendingPayments,
                 currentCapacity,
                 maxCapacity,
@@ -677,7 +731,7 @@ exports.getReports = async (req, res) => {
                 sortFormat = { _id: 1 };
         }
 
-        // Revenue data by time period
+        // Revenue data by time period (using amount field which includes discounts)
         const revenueData = await Pool.aggregate([
             {
                 $match: {
@@ -690,7 +744,9 @@ exports.getReports = async (req, res) => {
                     _id: groupFormat,
                     revenue: { $sum: '$amount' },
                     bookings: { $sum: 1 },
-                    visitors: { $sum: '$persons' }
+                    visitors: { $sum: '$persons' },
+                    totalDiscounts: { $sum: '$discount' },
+                    subtotal: { $sum: '$subtotal' }
                 }
             },
             { $sort: sortFormat }
@@ -709,7 +765,9 @@ exports.getReports = async (req, res) => {
                     _id: '$passType',
                     count: { $sum: 1 },
                     revenue: { $sum: '$amount' },
-                    visitors: { $sum: '$persons' }
+                    visitors: { $sum: '$persons' },
+                    discounts: { $sum: '$discount' },
+                    subtotal: { $sum: '$subtotal' }
                 }
             },
             { $sort: { count: -1 } }
@@ -728,7 +786,8 @@ exports.getReports = async (req, res) => {
                     _id: '$timeSlot',
                     visitors: { $sum: '$persons' },
                     revenue: { $sum: '$amount' },
-                    bookings: { $sum: 1 }
+                    bookings: { $sum: 1 },
+                    discounts: { $sum: '$discount' }
                 }
             },
             { $sort: { _id: 1 } }
@@ -750,7 +809,8 @@ exports.getReports = async (req, res) => {
                 $group: {
                     _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
                     revenue: { $sum: '$amount' },
-                    bookings: { $sum: 1 }
+                    bookings: { $sum: 1 },
+                    discounts: { $sum: '$discount' }
                 }
             },
             { $sort: { _id: 1 } },
@@ -770,6 +830,7 @@ exports.getReports = async (req, res) => {
                     _id: '$customerName',
                     bookings: { $sum: 1 },
                     totalSpent: { $sum: '$amount' },
+                    totalDiscounts: { $sum: '$discount' },
                     lastVisit: { $max: '$date' }
                 }
             },

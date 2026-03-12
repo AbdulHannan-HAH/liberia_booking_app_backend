@@ -1,4 +1,4 @@
-// controllers/hotelController.js - UPDATED (NO TAX + OPTIONAL EMAIL/PHONE)
+// controllers/hotelController.js - UPDATED (WITH DISCOUNT + OPTIONAL EMAIL/PHONE)
 const Reservation = require('../models/Reservation');
 const Room = require('../models/Room');
 const RoomType = require('../models/RoomType');
@@ -105,7 +105,7 @@ exports.getReservation = async (req, res) => {
     }
 };
 
-// @desc    Create new reservation (NO TAX + OPTIONAL EMAIL/PHONE)
+// @desc    Create new reservation (WITH DISCOUNT)
 // @route   POST /api/hotel/reservations
 // @access  Private/Admin, Hotel Staff
 exports.createReservation = async (req, res) => {
@@ -125,8 +125,8 @@ exports.createReservation = async (req, res) => {
             children,
             paymentStatus,
             specialRequests,
-            totalAmount,
-            extraCharges = []
+            extraCharges = [],
+            discount = 0 // NEW: accept discount (default 0)
         } = req.body;
 
         // Validate required fields - only guestName is required, email and phone are optional
@@ -198,8 +198,10 @@ exports.createReservation = async (req, res) => {
         }
 
         const subTotal = roomTotal + servicesTotal;
+        // Ensure discount is not negative and not greater than subtotal
+        const validDiscount = Math.max(0, Math.min(discount, subTotal));
         const tax = 0; // No tax as per requirement
-        const finalTotalAmount = subTotal + tax;
+        const finalTotalAmount = subTotal - validDiscount + tax;
 
         // Generate reservation number
         const reservationCount = await Reservation.countDocuments();
@@ -208,8 +210,8 @@ exports.createReservation = async (req, res) => {
         // Create reservation - email and phone are optional (will be saved as empty strings if not provided)
         const reservation = await Reservation.create({
             guestName,
-            email: email || '', // Default to empty string if not provided
-            phone: phone || '', // Default to empty string if not provided
+            email: email || '',
+            phone: phone || '',
             checkIn: checkInDate,
             checkOut: checkOutDate,
             roomType,
@@ -224,6 +226,7 @@ exports.createReservation = async (req, res) => {
                 quantity: charge.quantity || 1
             })),
             subTotal,
+            discount: validDiscount, // store discount
             tax,
             totalAmount: finalTotalAmount,
             paymentStatus: paymentStatus || 'pending',
@@ -266,7 +269,7 @@ exports.createReservation = async (req, res) => {
     }
 };
 
-// @desc    Update reservation
+// @desc    Update reservation (WITH DISCOUNT)
 // @route   PUT /api/hotel/reservations/:id
 // @access  Private/Admin, Hotel Staff
 exports.updateReservation = async (req, res) => {
@@ -281,7 +284,8 @@ exports.updateReservation = async (req, res) => {
             adults,
             children,
             paymentStatus,
-            specialRequests
+            specialRequests,
+            discount // NEW: accept discount
         } = req.body;
 
         // Find reservation
@@ -309,6 +313,7 @@ exports.updateReservation = async (req, res) => {
         if (children !== undefined) reservation.children = parseInt(children);
         if (paymentStatus) reservation.paymentStatus = paymentStatus;
         if (specialRequests !== undefined) reservation.specialRequests = specialRequests;
+        if (discount !== undefined) reservation.discount = Math.max(0, discount); // update discount
 
         // Handle room change or date change
         if (roomNumber !== oldRoomNumber || checkIn || checkOut) {
@@ -370,13 +375,39 @@ exports.updateReservation = async (req, res) => {
             }
         }
 
-        // Recalculate amount if dates changed
-        if (checkIn || checkOut) {
+        // Recalculate amount if dates changed or discount changed
+        if (checkIn || checkOut || roomNumber || discount !== undefined) {
             const nights = Math.ceil((reservation.checkOut - reservation.checkIn) / (1000 * 60 * 60 * 24));
             reservation.totalNights = nights;
-            reservation.subTotal = reservation.roomRate * nights;
-            reservation.tax = 0; // No tax
-            reservation.totalAmount = reservation.subTotal + reservation.tax;
+
+            // Recalculate room total (need room type base price? We can use existing roomRate or fetch latest from RoomType)
+            // For simplicity, we keep the existing roomRate. If roomType changed, we would need to update roomRate.
+            // But roomNumber might not change room type. We'll assume roomRate remains the same unless roomNumber changed.
+            // If roomNumber changed, we should fetch new room type price.
+            let roomRate = reservation.roomRate;
+            if (roomNumber && roomNumber !== oldRoomNumber) {
+                // Get room type from new room
+                const newRoom = await Room.findOne({ roomNumber }).populate('roomType');
+                if (newRoom) {
+                    // You might need to get the room type's base price from RoomType model
+                    const roomType = await RoomType.findOne({ name: newRoom.roomType });
+                    if (roomType) {
+                        roomRate = roomType.basePrice;
+                        reservation.roomRate = roomRate;
+                    }
+                }
+            }
+
+            const roomTotal = roomRate * nights;
+            // Recalculate services total
+            const servicesTotal = reservation.extraCharges.reduce((sum, charge) => sum + (charge.amount * (charge.quantity || 1)), 0);
+            const subTotal = roomTotal + servicesTotal;
+            reservation.subTotal = subTotal;
+
+            // Ensure discount is not negative and not greater than subtotal
+            reservation.discount = Math.max(0, Math.min(reservation.discount, subTotal));
+            reservation.tax = 0; // no tax
+            reservation.totalAmount = subTotal - reservation.discount;
         }
 
         await reservation.save();

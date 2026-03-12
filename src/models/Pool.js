@@ -11,12 +11,12 @@ const poolSchema = new mongoose.Schema({
         trim: true,
         lowercase: true,
         match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email'],
-        default: '' // Set default to empty string
+        default: ''
     },
     phone: {
         type: String,
         trim: true,
-        default: '' // Set default to empty string
+        default: ''
     },
     date: {
         type: Date,
@@ -37,6 +37,16 @@ const poolSchema = new mongoose.Schema({
         required: [true, 'Number of persons is required'],
         min: [1, 'At least 1 person required'],
         max: [10, 'Maximum 10 persons per booking']
+    },
+    subtotal: {
+        type: Number,
+        required: [true, 'Subtotal is required']
+    },
+    discount: {
+        type: Number,
+        default: 0,
+        min: [0, 'Discount cannot be negative'],
+        max: [100000, 'Discount amount too high']
     },
     amount: {
         type: Number,
